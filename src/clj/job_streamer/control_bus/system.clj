@@ -60,25 +60,29 @@
 (def access-rules [{:pattern #"^/(?!auth|user|healthcheck|version).*$"
                     :handler authenticated?}])
 
-(defn token-base [token-provider]
+(defn token-base [oauth2 token-provider]
   (token-backend
    {:authfn
     (fn [req token]
       (try
-        (let [user (token/auth-by token-provider token)]
-          (log/info "token authentication token=" token ", user=" user)
-          user)
+        (if (= "Token" (token/get-token-type token-provider))
+          (let [user (token/auth-by token-provider token)]
+            (log/info "token authentication token=" token ", user=" user)
+            user)
+          (when (token/check-token token-provider token)
+            token))
         (catch Exception e
-          (log/error "auth-by error" e))))}))
+          (log/error "auth-by error" e))))
+    :token-name (token/get-token-type token-provider)}))
 
-(defn wrap-authn [handler token-provider & backends]
-  (apply wrap-authentication handler (conj backends (token-base token-provider))))
+(defn wrap-authn [handler token-provider oauth2 & backends]
+  (apply wrap-authentication handler (conj backends (token-base oauth2 token-provider))))
 
 (def base-config
   {:app {:middleware [[wrap-not-found :not-found]
                       [wrap-access-rules   :access-rules]
                       [wrap-authorization  :authorization]
-                      [wrap-authn          :token :session-base]
+                      [wrap-authn          :token :oauth2 :session-base]
                       [wrap-same-origin-policy :same-origin]
                       [wrap-multipart-params]
                       [wrap-internal-server-error :same-origin]

@@ -4,13 +4,17 @@
             [clojure.tools.logging :as log]
             [clojure.core.cache :as cache]
             [liberator.core :as liberator]
+            [clj-http.client :as client]
+            [clojure.data.json :as json]
             (job-streamer.control-bus.component
              [datomic :as d]))
   (:import [java.util UUID]))
 
 (defprotocol ITokenProvider
-  (new-token [this user])
-  (auth-by   [this token]))
+  (new-token      [this user])
+  (auth-by        [this token])
+  (check-token    [this token])
+  (get-token-type [this]))
 
 (defn token-resource [{:keys [datomic token]}]
   (liberator/resource
@@ -36,7 +40,7 @@
     :handle-created (fn [ctx]
                       (::post-response ctx))))
 
-(defrecord TokenProvider [disposable?]
+(defrecord TokenProvider [disposable? introspection-url token-type]
   component/Lifecycle
 
   (start [component]
@@ -46,7 +50,7 @@
              (assoc component :token-cache token-cache))))
 
   (stop [component]
-        (if disposable?
+        (if (:disposable? config)
           (dissoc component :token-cache)
           component))
 
@@ -60,7 +64,22 @@
            (let [uuid-token (condp instance? token
                               String (UUID/fromString token)
                               UUID   token)]
-             (cache/lookup @(:token-cache component) uuid-token))))
+             (cache/lookup @(:token-cache component) uuid-token)))
+
+  (defn check-token [component access-token]
+    (let [res (client/get (str introspection-url
+                               "?token="
+                               access-token
+                               "&token_hint=hint")
+                          {:headers {"Content-type" "application/x-www-form-urlencoded"}
+                          :throw-exceptions false})]
+      (when (== 200 (:status res))
+        (let [{:keys [active client_id username scope token_type nbf sub aud iss exp iat jti] :as res}
+              (json/read-str (:body res) :key-fn keyword)]
+          active))))
+
+  (defn get-token-type [component]
+    token-type))
 
 (defn token-provider-component [options]
   (map->TokenProvider options))

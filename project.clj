@@ -16,6 +16,7 @@
                                                                    com.amazonaws/aws-java-sdk]]
                  [org.jsoup/jsoup "1.10.2"]
                  [org.clojure/data.json "0.2.6"]
+                 [clj-http "3.6.1"]
                  [datomic-schema "1.3.0"]
                  [liberator "0.14.1"]
                  [compojure "1.5.1"]
